@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>EEG Music Player</title>
+<style>
+  :root{
+    --bg:#0f1220;--card:#171a2b;--muted:#8186a3;--text:#e7e9f7;--accent:#68d391;--accent-2:#7aa2ff;--danger:#ff7a7a;
+    --radius:18px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+    background: radial-gradient(1200px 600px at 30% -10%, rgba(122,162,255,.15), transparent 50%),
+                radial-gradient(900px 500px at 120% 10%, rgba(104,211,145,.12), transparent 50%),
+                var(--bg);
+    color:var(--text);
+    min-height:100dvh;
+    display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .app{ width:min(100%,980px); }
+  header{ display:flex; align-items:center; gap:16px; margin-bottom:16px; }
+  .logo{
+    width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--accent-2),#a589ff);display:grid;place-items:center;
+    box-shadow:0 10px 30px rgba(122,162,255,.35);
+    font-weight:800;color:#0d1220;
+  }
+  h1{font-size:22px;margin:0}
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:var(--radius);
+    box-shadow:0 12px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .row{display:grid;grid-template-columns: 1.2fr .8fr; gap:16px}
+  @media (max-width:900px){ .row{grid-template-columns:1fr} }
+  .status{ display:flex; align-items:center; justify-content:space-between; gap:14px; padding:16px 18px; margin-bottom:16px; }
+  .pill{ display:inline-flex; align-items:center; gap:10px; padding:8px 14px; border-radius:999px; background:rgba(255,255,255,.06); color:var(--text); border:1px solid rgba(255,255,255,.08); }
+  .dot{width:10px;height:10px;border-radius:999px;background:#ccc}
+  .dot.ok{ background: var(--accent); box-shadow:0 0 0 4px rgba(104,211,145,.18) }
+  .dot.bad{ background: var(--danger); box-shadow:0 0 0 4px rgba(255,122,122,.18) }
+  .emotion{ font-weight:800; letter-spacing:.3px; text-transform:uppercase; padding:8px 14px; border-radius:12px; background:linear-gradient(135deg, rgba(104,211,145,.18), rgba(122,162,255,.18)); border:1px dashed rgba(255,255,255,.18); }
+  .player{ padding:18px }
+  .now{display:flex; align-items:center; gap:14px; margin-bottom:10px}
+  .cover{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#343a62,#1d2036);flex:0 0 auto}
+  .title{font-weight:700}
+  .sub{color:var(--muted);font-size:13px}
+  .controls{ display:flex; align-items:center; gap:10px; margin:12px 0 }
+  button{ background:#1a1f35; color:var(--text); border:1px solid rgba(255,255,255,.08); padding:10px 14px; border-radius:12px; cursor:pointer; transition: transform .05s ease, background .2s ease, border-color .2s ease; }
+  button:hover{ transform: translateY(-1px); background:#212746 }
+  button.primary{ background:linear-gradient(135deg,var(--accent-2),#7ff0c3); color:#0e1326; border:none }
+  .progress{ height:6px; background:#101326; border-radius:999px; position:relative; overflow:hidden }
+  .bar{ position:absolute; inset:0 100% 0 0; background:linear-gradient(90deg,var(--accent-2), var(--accent)); }
+  .queue{ padding:8px; max-height:460px; overflow:auto }
+  .track{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:12px; cursor:pointer; border:1px solid transparent; }
+  .track:hover{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.06) }
+  .track.active{ background:linear-gradient(135deg, rgba(122,162,255,.18), rgba(104,211,145,.18)); border-color:transparent }
+  .small{ color:var(--muted); font-size:12px }
+  .empty{ color:var(--muted); padding:18px; text-align:center }
+  footer{ margin-top:16px; text-align:center; color:var(--muted); font-size:12px }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">EEG</div>
+    <div>
+      <h1>EEG Emotion-Aware Music Player</h1>
+      <div class="small">XIAO ESP32-C3 + BioAmp EXG Pill → Firebase → Playlists</div>
+    </div>
+  </header>
+
+  <!-- Status -->
+  <div class="card status">
+    <div class="pill"><span id="wifiDot" class="dot"></span> Wi-Fi / Firebase</div>
+    <div class="pill">Current emotion: <span id="emotionTag" class="emotion">—</span></div>
+  </div>
+
+  <div class="row">
+    <!-- Player -->
+    <section class="card player">
+      <div class="now">
+        <div class="cover" id="cover"></div>
+        <div>
+          <div class="title" id="nowTitle">Nothing playing</div>
+          <div class="sub" id="nowSub">Waiting for emotion…</div>
+        </div>
+      </div>
+
+      <div class="progress"><div id="bar" class="bar"></div></div>
+
+      <div class="controls">
+        <button id="prevBtn">⏮</button>
+        <button id="playBtn" class="primary">▶️ Play</button>
+        <button id="nextBtn">⏭</button>
+        <button id="shuffleBtn">🔀 Shuffle</button>
+        <button id="repeatBtn">🔁 Repeat</button>
+      </div>
+
+      <audio id="audio" crossorigin="anonymous"></audio>
+    </section>
+
+    <!-- Queue -->
+    <aside class="card queue" id="queue">
+      <div class="empty">Queue is empty. When your emotion updates, the matching playlist will appear here.</div>
+    </aside>
+  </div>
+
+  <footer>Tip: keep your browser tab in focus for autoplay. If it pauses, click ▶️ once.</footer>
+</div>
+
+<!-- Firebase (v10 modular) -->
+<script type="module">
+  /***********************
+   * 1) CONFIGURE
+   ***********************/
+  const REPO = "Guruvel-Creativities/EEG-Music-Player"; 
+  const BRANCH = "main";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAKUBe4zajk6R6kLqj2G_8ugQtjEnuPABQ",
+    authDomain: "eeg-music-player.firebaseapp.com",
+    databaseURL: "https://eeg-music-player-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "eeg-music-player",
+    storageBucket: "eeg-music-player.firebasestorage.app",
+    messagingSenderId: "926462980587",
+    appId: "1:926462980587:web:b12abf039eb40bfa11e9ae"
+  };
+
+  const EMOTION_PATHS = ["/currentEmotion", "/emotion/current"]; 
+
+  /***********************
+   * 2) APP LOGIC
+   ***********************/
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+  const wifiDot = document.getElementById("wifiDot");
+  const emotionTag = document.getElementById("emotionTag");
+  const audio = document.getElementById("audio");
+  const playBtn = document.getElementById("playBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const prevBtn = document.getElementById("prevBtn");
+  const shuffleBtn = document.getElementById("shuffleBtn");
+  const repeatBtn = document.getElementById("repeatBtn");
+  const queueEl = document.getElementById("queue");
+  const nowTitle = document.getElementById("nowTitle");
+  const nowSub = document.getElementById("nowSub");
+  const bar = document.getElementById("bar");
+
+  let queue = [];
+  let index = -1;
+  let shuffle = true;
+  let repeat = false;
+  let currentEmotion = "";
+
+  function setOnline(ok){
+    wifiDot.classList.toggle("ok", ok);
+    wifiDot.classList.toggle("bad", !ok);
+  }
+
+  function rawUrl(path){
+    return `https://raw.githubusercontent.com/${REPO}/${BRANCH}/${path}`;
+  }
+
+  function renderQueue(){
+    if(!queue.length){
+      queueEl.innerHTML = `<div class="empty">No tracks for <b>${currentEmotion || "—"}</b>.</div>`;
+      return;
+    }
+    queueEl.innerHTML = "";
+    queue.forEach((t,i)=>{
+      const li = document.createElement("div");
+      li.className = "track" + (i===index ? " active":"");
+      li.innerHTML = `<div>${t.title}</div><div class="small">${t.url.split("/").pop()}</div>`;
+      li.onclick = ()=> playAt(i);
+      queueEl.appendChild(li);
+    });
+  }
+
+  function playAt(i){
+    if(!queue.length) return;
+    index = (i + queue.length) % queue.length;
+    const t = queue[index];
+    audio.src = t.url;
+    nowTitle.textContent = t.title;
+    nowSub.textContent = currentEmotion ? `Playlist • ${currentEmotion.toUpperCase()}` : "Playlist";
+    audio.play().catch(()=>{});
+    renderQueue();
+  }
+
+  function next(){ shuffle ? playAt(Math.floor(Math.random()*queue.length)) : playAt(index+1); }
+  function prev(){ playAt(index-1); }
+
+  playBtn.onclick = ()=> audio.paused ? audio.play() : audio.pause();
+  nextBtn.onclick = next;
+  prevBtn.onclick = prev;
+  shuffleBtn.onclick = ()=>{ shuffle = !shuffle; shuffleBtn.classList.toggle("primary", shuffle); };
+  repeatBtn.onclick  = ()=>{ repeat  = !repeat;  repeatBtn.classList.toggle("primary", repeat); };
+
+  audio.addEventListener("play", ()=> playBtn.textContent="⏸ Pause");
+  audio.addEventListener("pause", ()=> playBtn.textContent="▶️ Play");
+  audio.addEventListener("ended", ()=> repeat ? playAt(index) : next());
+  audio.addEventListener("timeupdate", ()=>{
+    const p = audio.currentTime / Math.max(1, audio.duration || 1);
+    bar.style.inset = `0 ${Math.max(0,100 - p*100)}% 0 0`;
+  });
+
+  // ✅ Your playlist.json is { "songs": [ {title,url}, ... ] }
+  async function fetchPlaylistForEmotion(emotion){
+    const url = rawUrl(`${emotion.toLowerCase()}/playlist.json`);
+    const res = await fetch(url, {cache:"no-store"});
+    if(!res.ok) throw new Error(`Playlist not found for ${emotion}`);
+    const data = await res.json();
+
+    const files = Array.isArray(data.songs) ? data.songs : [];
+    return files.map(song => ({
+      title: song.title,
+      url: song.url
+    }));
+  }
+
+  async function loadEmotion(em){
+    if(!em || em.toLowerCase() === currentEmotion.toLowerCase()) return;
+    currentEmotion = em;
+    emotionTag.textContent = em.toUpperCase();
+
+    try{
+      const list = await fetchPlaylistForEmotion(em);
+      queue = list;
+      if(!queue.length){ renderQueue(); return; }
+      renderQueue();
+      shuffle ? playAt(Math.floor(Math.random()*queue.length)) : playAt(0);
+    }catch(err){
+      queue = [];
+      renderQueue();
+      nowTitle.textContent = "No playlist found";
+      nowSub.textContent = `Missing ${em}/playlist.json`;
+      console.warn(err);
+    }
+  }
+
+  function pickLabelFromSnapshot(v){
+    if(v == null) return null;
+    if(typeof v === "string") return v;               
+    if(typeof v === "object" && v.label) return v.label;
+    return null;
+  }
+
+  (async ()=>{
+    try{
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+      setOnline(true);
+
+      EMOTION_PATHS.forEach(path=>{
+        onValue(ref(db, path), snap=>{
+          const label = pickLabelFromSnapshot(snap.val());
+          if(label){ loadEmotion(label); }
+        }, err=>{
+          console.warn("Firebase read error:", err);
+          setOnline(false);
+        });
+      });
+    }catch(e){
+      console.error(e);
+      setOnline(false);
+    }
+  })();
+</script>
+</body>
+</html>
